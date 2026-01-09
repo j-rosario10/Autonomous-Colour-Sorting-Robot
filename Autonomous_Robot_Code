@@ -1,0 +1,597 @@
+#include "PC_FileIO.c"
+#pragma config(Sensor, S2, soundSensor, sensorSoundDB)
+
+const float wheelRadius = 2.75;
+const float conversionFactor = (2*PI*wheelRadius)/360.0;
+
+// Sound Sensor
+void emergencyShutdown() {
+    motor[motorA] = 0; // Stop motor A
+    motor[motorD] = 0; // Stop motor D
+    displayTextLine(2, "Shutting down...");
+    wait1Msec(2000);   // Optional delay to display message
+    stopAllTasks();    // Stops all tasks and shuts down the program
+}
+
+void waitForSoundTrigger() {
+    SensorType[S2] = sensorNone;
+    wait1Msec(100);
+    SensorType[S2] = sensorSoundDB;
+    wait1Msec(500);
+
+    while (SensorValue[S2] < 60 && time1[T1] < 20000) {
+    }
+}
+
+// File Read Function
+const int numLocations = 5;
+string location_names[numLocations];
+int x_coordinates[numLocations];
+int y_coordinates[numLocations];
+
+int findLocationIndex(string name) {
+    SensorType[S3] = sensorEV3_Color;
+    wait1Msec(50);
+    SensorMode[S3] = modeEV3Color_Color;
+    wait1Msec(50);
+
+    clearTimer(T1);
+
+    if (name == "Sort") {
+        while (time1[T1] < 7000 &&
+               SensorValue[S3] != (int)colorBlue &&
+               SensorValue[S3] != (int)colorRed &&
+               SensorValue[S3] != (int)colorGreen) {
+
+            if (SensorValue[S3] == (int)colorBlue) {
+                name = "BlueBin";
+            }
+            else if (SensorValue[S3] == (int)colorRed) {
+                name = "RedBin";
+            }
+            else if (SensorValue[S3] == (int)colorGreen) {
+                name = "GreenBin";
+            }
+            else {
+                emergencyShutdown();
+            }
+        }
+    }
+
+    for (int i = 0; i < numLocations; i++) {
+        if (location_names[i] == name) {
+            return i;
+        }
+    }
+
+    return -1;
+}
+
+void readCoordinates() {
+    TFileHandle fin;
+    bool fileOkay = openReadPC(fin, "coordinate.txt");
+
+    if (!fileOkay) {
+        displayTextLine(1, "Error opening file.");
+        return;
+    }
+
+    int index = 0;
+
+    while (index < numLocations) {
+        string name;
+        int x, y;
+
+        readTextPC(fin, name);
+        readIntPC(fin, x);
+        readIntPC(fin, y);
+
+        location_names[index] = name;
+        x_coordinates[index] = x;
+        y_coordinates[index] = y;
+
+        index++;
+    }
+
+    closeFilePC(fin);
+}
+
+// Ultrasonic sensor function
+void ultrasonic_to_object() {
+    SensorType[S1] = sensorEV3_Ultrasonic;
+    wait1Msec(50);
+
+    // Initialize distance
+    float distance = SensorValue[S1] * conversionFactor;
+
+    // Move until the robot is at the desired distance
+    while (distance >= 11.5) {
+        // Continuously update distance
+        distance = SensorValue[S1] * conversionFactor;
+    }
+
+    // Stop the motors when the condition is met
+    motor[motorA] = 0;
+    motor[motorD] = 0;
+}
+
+void ultrasonic_to_trash() {
+    SensorType[S1] = sensorEV3_Ultrasonic;
+    wait1Msec(50);
+
+    // Initialize distance
+    float distance = SensorValue[S1] * conversionFactor;
+
+    // Move until the robot is at the desired distance
+    while (distance >= 10) {
+        // Continuously update distance
+        distance = SensorValue[S1] * conversionFactor;
+    }
+
+    // Stop the motors when the condition is met
+    motor[motorA] = 0;
+    motor[motorD] = 0;
+}
+
+// Transport function
+void transport(int x, int y, int xcur, int ycur) {
+    if (xcur == 0 && ycur == 0) { // If at home base
+        if ((x > xcur) && (y == ycur)) { // If heading to pick up, tested
+            resetGyro(S4);
+
+            wait1Msec(1500);
+
+            motor[motorA] = -10;
+            motor[motorD] = 10;
+
+            while (abs(getGyroDegrees(S4)) < 90) {} //rotate to the right
+            motor[motorA] = motor[motorD] = 0;
+
+            nMotorEncoder[motorA] = 0;
+
+            wait1Msec(1500);
+
+            motor[motorA] = motor[motorD] = 20;
+            while (abs(nMotorEncoder[motorA] * conversionFactor) < (x - xcur)) {}
+            motor[motorA] = motor[motorD] = 0; //stop at pick up
+        }
+
+        else if (x < xcur && y > ycur) { //if heading to bins, where x is negative, y is positive, tested
+            nMotorEncoder[motorA] = 0;
+
+            motor[motorA] = motor[motorD] = 20;
+
+            while (abs(nMotorEncoder[motorA] * conversionFactor) < (y - ycur) / 2) {}
+
+            motor[motorA] = motor[motorD] = 0;
+
+            resetGyro(S4);
+
+            wait1Msec(1500);
+
+            motor[motorA] = 10;
+            motor[motorD] = -10;
+
+            while (abs(getGyroDegrees(S4)) < 85) {}
+            motor[motorA] = motor[motorD] = 0;
+
+            nMotorEncoder[motorA] = 0;
+
+            wait1Msec(1500);
+
+            motor[motorA] = motor[motorD] = 20;
+            while (abs(nMotorEncoder[motorA] * conversionFactor) < abs(xcur - x)) {}
+
+            motor[motorA] = motor[motorD] = 0;
+
+            resetGyro(S4);
+
+            wait1Msec(1500);
+
+            motor[motorD] = 10;
+            motor[motorA] = -10;
+
+            while (abs(getGyroDegrees(S4)) < 87) {}
+            motor[motorA] = motor[motorD] = 0;
+
+            nMotorEncoder[motorA] = 0;
+
+            motor[motorA] = motor[motorD] = 20;
+            while (abs(nMotorEncoder[motorA] * conversionFactor) < (y - ycur) / 2) {}
+
+            motor[motorA] = motor[motorD] = 0;
+        }
+
+        else if (x > xcur && y > ycur) { //if x = 20, y = 50, or if both x and y are positive
+            nMotorEncoder[motorA] = 0;
+
+            motor[motorA] = motor[motorD] = 20;
+
+            while (abs(nMotorEncoder[motorA] * conversionFactor) < (y - ycur) / 2) {}
+
+            motor[motorA] = motor[motorD] = 0;
+
+            resetGyro(S4);
+
+            wait1Msec(1500);
+
+            motor[motorA] = -10;
+            motor[motorD] = 10;
+
+            while (abs(getGyroDegrees(S4)) < 90) {}
+            motor[motorA] = motor[motorD] = 0;
+
+            wait1Msec(1000);
+
+            nMotorEncoder[motorA] = 0;
+
+            motor[motorA] = motor[motorD] = 20;
+            while (abs(nMotorEncoder[motorA] * conversionFactor) < abs(x - xcur)) {}
+
+            motor[motorA] = motor[motorD] = 0;
+
+            resetGyro(S4);
+
+            wait1Msec(1500);
+
+            motor[motorD] = -10;
+            motor[motorA] = 10;
+
+            while (abs(getGyroDegrees(S4)) < 85) {}
+            motor[motorA] = motor[motorD] = 0;
+
+            nMotorEncoder[motorA] = 0;
+
+            motor[motorA] = motor[motorD] = 20;
+            while (abs(nMotorEncoder[motorA] * conversionFactor) < (y - ycur) / 2) {}
+
+            motor[motorA] = motor[motorD] = 0;
+        }
+
+        else if ((x == xcur) && (y > ycur)) { //if x = 0, y = 50, or if only need to move forward, tested
+            nMotorEncoder[motorA] = 0;
+
+            motor[motorA] = motor[motorD] = 20;
+
+            while (abs(nMotorEncoder[motorA] * conversionFactor) < y) {}
+            motor[motorA] = motor[motorD] = 0;
+        }
+    }
+
+    else if ((xcur != 0) || (ycur != 0)) { //If not at home base, and need to return
+        if (xcur > 0 && ycur == 0) { //If at pick up zone, tested
+            resetGyro(S4);
+
+            wait1Msec(1500);
+
+            motor[motorD] = -10;
+            motor[motorA] = 10;
+
+            while (abs(getGyroDegrees(S4)) < 175) {}
+            motor[motorA] = motor[motorD] = 0;
+
+            wait1Msec(1000);
+
+            nMotorEncoder[motorA] = 0;
+
+            motor[motorA] = motor[motorD] = 20;
+            while (abs(nMotorEncoder[motorA] * conversionFactor) < abs(xcur - x)) {}
+
+            motor[motorA] = motor[motorD] = 0;
+
+            resetGyro(S4);
+
+            wait1Msec(1500);
+
+            motor[motorA] = -10;
+            motor[motorD] = 10;
+
+            while (abs(getGyroDegrees(S4)) < 85) {} //Final positioning rotation
+
+            motor[motorA] = motor[motorD] = 0;
+        }
+
+        else if (xcur == 0 && ycur > y) { //If at bin directly ahead, tested
+            resetGyro(S4);
+
+            wait1Msec(1500);
+
+            motor[motorD] = -10;
+            motor[motorA] = 10;
+
+            while (abs(getGyroDegrees(S4)) < 175) {}
+            motor[motorA] = motor[motorD] = 0;
+
+            wait1Msec(1000);
+
+            nMotorEncoder[motorA] = 0;
+
+            motor[motorA] = motor[motorD] = 20;
+            while (abs(nMotorEncoder[motorA] * conversionFactor) < (ycur - y)) {}
+
+            motor[motorA] = motor[motorD] = 0;
+
+            resetGyro(S4);
+
+            wait1Msec(1500);
+
+            motor[motorD] = -10;
+            motor[motorA] = 10;
+
+            while (abs(getGyroDegrees(S4)) < 175) {} //Final positioning rotation
+            motor[motorA] = motor[motorD] = 0;
+        }
+
+        else if (xcur < x && ycur > y) { //If bin, x pos is negative, tested
+            resetGyro(S4);
+
+            wait1Msec(1500);
+
+            motor[motorD] = -10;
+            motor[motorA] = 10;
+
+            while (abs(getGyroDegrees(S4)) < 175) {}
+            motor[motorA] = motor[motorD] = 0;
+
+            wait1Msec(1000);
+
+            nMotorEncoder[motorA] = 0;
+
+            motor[motorA] = motor[motorD] = 20;
+
+            while (abs(nMotorEncoder[motorA] * conversionFactor) < abs(ycur - y)) {}
+
+            motor[motorA] = motor[motorD] = 0;
+
+            resetGyro(S4);
+
+            wait1Msec(2000);
+
+            motor[motorD] = -10;
+            motor[motorA] = 10;
+
+            while (abs(getGyroDegrees(S4)) < 85) {}
+            motor[motorA] = motor[motorD] = 0;
+
+            wait1Msec(1000);
+
+            nMotorEncoder[motorA] = 0;
+
+            motor[motorA] = motor[motorD] = 20;
+            while (abs(nMotorEncoder[motorA] * conversionFactor) < abs(xcur - x)) {}
+
+            motor[motorA] = motor[motorD] = 0;
+
+            resetGyro(S4);
+
+            wait1Msec(1500);
+
+            motor[motorA] = 10;
+            motor[motorD] = -10;
+
+            while (abs(getGyroDegrees(S4)) < 85) {} //Final positioning rotation
+            motor[motorA] = motor[motorD] = 0;
+        }
+
+        else if (xcur > x && ycur > y) { //If bin, x pos is positive, tested
+            resetGyro(S4);
+
+            wait1Msec(1500);
+
+            motor[motorD] = -10;
+            motor[motorA] = 10;
+
+            while (abs(getGyroDegrees(S4)) < 170) {}
+            motor[motorA] = motor[motorD] = 0;
+
+            wait1Msec(1000);
+
+            nMotorEncoder[motorA] = 0;
+            motor[motorA] = motor[motorD] = 20;
+
+            while (abs(nMotorEncoder[motorA] * conversionFactor) < abs(ycur - y) / 2) {}
+
+            motor[motorA] = motor[motorD] = 0;
+
+            resetGyro(S4);
+
+            wait1Msec(1500);
+
+            motor[motorD] = 10;
+            motor[motorA] = -10;
+
+            while (abs(getGyroDegrees(S4)) < 85) {}
+            motor[motorA] = motor[motorD] = 0;
+
+            wait1Msec(1000);
+
+            nMotorEncoder[motorA] = 0;
+            motor[motorA] = motor[motorD] = 20;
+
+            while (abs(nMotorEncoder[motorA] * conversionFactor) < abs(xcur - x)) {}
+
+            motor[motorA] = motor[motorD] = 0;
+
+            resetGyro(S4);
+
+            wait1Msec(1500);
+
+            motor[motorD] = -10;
+            motor[motorA] = 10;
+
+            while (abs(getGyroDegrees(S4)) < 85) {}
+            motor[motorA] = motor[motorD] = 0;
+
+            wait1Msec(1000);
+
+            nMotorEncoder[motorA] = 0;
+            motor[motorA] = motor[motorD] = 20;
+
+            while (abs(nMotorEncoder[motorA] * conversionFactor) < abs(ycur - y) / 2) {}
+
+            motor[motorA] = motor[motorD] = 0;
+
+            resetGyro(S4);
+
+            wait1Msec(1500);
+
+            motor[motorD] = 10;
+            motor[motorA] = -10;
+
+            while (abs(getGyroDegrees(S4)) < 85) {}
+            motor[motorA] = motor[motorD] = 0;
+
+            wait1Msec(1000);
+
+            nMotorEncoder[motorA] = 0;
+            motor[motorA] = motor[motorD] = 20;
+
+            while (abs(nMotorEncoder[motorA] * conversionFactor) < abs(ycur - y) / 2) {}
+
+            motor[motorA] = motor[motorD] = 0;
+        }
+    }
+}
+
+void objectpickup(bool pickdrop) {
+    if (pickdrop == true) {
+        // PICKUP PROCESS
+
+        // bring the arm down
+        motor[motorC] = 30;
+        wait1Msec(1400);
+        motor[motorC] = 0;
+
+        // close the claw
+        motor[motorB] = 25;
+        wait1Msec(400);
+        motor[motorB] = 0;
+
+        // bring the arm back up
+        motor[motorC] = -30;
+        wait1Msec(1400);
+        motor[motorC] = 0;
+    }
+
+    //motor b -25 opens, 25 CLOSES motorC -20 arm GO UP, 20 GO DOWN
+
+    if (pickdrop == false) {
+        // DROPOOFF PROCESS
+
+        motor[motorC] = 30;
+        wait1Msec(1400);
+        motor[motorC] = 0;
+
+        // open the claw
+        motor[motorB] = -25;
+        wait1Msec(400);
+        motor[motorB] = 0;
+
+        // bring the arm back up
+        motor[motorC] = -30;
+        wait1Msec(1400);
+        motor[motorC] = 0;
+    }
+}
+
+task main() {
+    readCoordinates();
+
+    clearTimer(T1);
+
+    waitForSoundTrigger();
+
+    int xcur = 0;
+    int ycur = 0;
+
+    string name = "Drop-off";
+
+    int index = findLocationIndex(name);
+
+    int x = x_coordinates[index];
+
+    int y = y_coordinates[index];
+
+    transport(x, y, xcur, ycur);
+
+    xcur = x;
+
+    ycur = y;
+
+    ultrasonic_to_object();
+
+    bool pick_drop = true;
+
+    objectpickup(pick_drop);
+
+    name = "Home";
+
+    index = findLocationIndex(name);
+
+    x = x_coordinates[index];
+
+    y = y_coordinates[index];
+
+    transport(x, y, xcur, ycur);
+
+    xcur = x;
+
+    ycur = y;
+
+    name = "Sort";
+
+    index = findLocationIndex(name);
+
+    x = x_coordinates[index];
+
+    y = y_coordinates[index];
+
+    transport(x, y, xcur, ycur);
+
+    xcur = x;
+
+    ycur = y;
+
+    ultrasonic_to_trash();
+
+    pick_drop = false;
+
+    objectpickup(pick_drop);
+
+    name = "Home";
+
+    index = findLocationIndex(name);
+
+    x = x_coordinates[index];
+
+    y = y_coordinates[index];
+
+    transport(x, y, xcur, ycur);
+
+    emergencyShutdown();
+
+    //motor[motorC] = -30;
+    //wait1Msec(1300);
+    //motor[motorC] = 0;
+
+    //transport(int destination(x), int (destination)y, int x(current), int y(current))
+
+    //Put the file function outputs in the first 2 parameters
+    /*
+    transport(50,0,0,0);
+
+    transport(0,0,50,0);//Heads back
+
+    transport(-20,50,0,0);
+
+    transport(0,0,-20,50);//Heads back
+
+    transport(0,50,0,0);
+
+    transport(0,0,0,50);//Heads back
+
+    transport(20,50,0,0);
+
+    transport(0,0,20,50);//Heads back
+    */
+}
