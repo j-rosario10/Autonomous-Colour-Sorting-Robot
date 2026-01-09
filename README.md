@@ -10,6 +10,11 @@ Design a fully autonomous robot capable of identifying object color, navigating 
 
 ---
 
+## Demonstration
+<a href="[https://drive.google.com/file/d/FILE_ID/view?usp=sharing](https://drive.google.com/file/d/10e0gwIAZdSL42T8b3and4BwjwGO_K3Yb/view?usp=drive_link)">
+  <img src="media/complete_robot.jpg" width="600">
+</a>
+
 ## Hardware
 - EV3 controller
 - DC drive motors with encoders
