@@ -11,7 +11,7 @@ Design a fully autonomous robot capable of identifying object color, navigating 
 ---
 
 ## Demonstration (click)
-<a href="https://drive.google.com/file/d/10e0gwIAZdSL42T8b3and4BwjwGO_K3Yb/view?usp=sharing">
+<a href="https://drive.google.com/file/d/16ZEPomCg03fvd-X_755U84TsZQb6GRMk/view?usp=sharing">
   <img src="media/complete_robot.jpg" width="600">
 </a>
 
